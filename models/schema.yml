@@ -1,0 +1,206 @@
+
+version: 2
+
+#models:
+#  - name: my_first_dbt_model
+#    description: "A starter dbt model"
+#    columns:
+#      - name: id
+#        description: "The primary key for this table"
+#        data_tests:
+#          - unique
+#          - not_null
+#
+#  - name: my_second_dbt_model
+#    description: "A starter dbt model"
+#    columns:
+#      - name: id
+#        description: "The primary key for this table"
+#        data_tests:
+#          - unique
+#          - not_null
+
+
+
+sources:
+  - name: sharebike
+    database: fifth-sol-426804-j7
+    schema: san_francisco_bikeshare
+    description: This is bigquery public dataset sharebike information
+    tables:
+      - name: bikeshare_trips
+        description: trip information
+        columns:
+          - name: trip_id
+            description: Primary key of the trips table
+            tests:
+              - unique
+              - not_null
+          - name: duration_sec
+            description: the trip duration in seconds.
+        freshness: # default freshness
+          warn_after: { count: 1400, period: day } # the sample data last end_date is 2018-05-01 18:56:06 UTC.
+          error_after: { count: 3650, period: day }
+        loaded_at_field: end_date
+
+      - name: bikeshare_station_info
+        description: station information
+        columns:
+          - name: station_id
+            description: Primary key of the station table
+            tests:
+              - unique
+              - not_null
+          - name: name
+            description: Public name of the station
+
+      - name: bikeshare_regions
+        description: region information
+        columns:
+          - name: region_id
+            description: Primary key of the region table
+            tests:
+              - unique
+              - not_null
+          - name: name
+            description: Public name of the region
+
+semantic_models:
+  - name: trip # A semantic model with the name Transactions
+    model: ref('trip') # References the dbt model named `fact_transactions`
+    description: "trips"
+    defaults:
+      agg_time_dimension: end_date
+
+    entities: # Entities included in the table are defined here. MetricFlow will use these columns as join keys.
+      - name: trip
+        type: primary
+        expr: trip_id
+      - name: start_station
+        type: foreign
+        expr: start_station_id
+      - name: station
+        type: foreign
+        expr: end_station_id
+
+    dimensions: # dimensions are qualitative values such as names, dates, or geographical data. They provide context to metrics and allow "metric by group" data slicing.
+      - name: start_station_name
+        type: categorical
+        expr: start_station_name
+      - name: end_station_name
+        type: categorical
+        expr: end_station_name
+      - name: start_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: end_date
+        type: time
+        expr: date(end_date)
+        type_params:
+          time_granularity: day
+
+    measures: # Measures are columns we perform an aggregation over. Measures are inputs to metrics.
+      - name: trips_count
+        description: "The total trips number."
+        agg: sum
+        expr: 1
+
+      - name: total_trip_duration
+        description: "The total trip duration."
+        agg: sum
+        expr: duration_sec
+
+      - name: median_trip_duration
+        description: "The median trip duration."
+        agg: median
+        expr: duration_sec
+        create_metric: true
+
+
+  - name: station # A semantic model with the name Transactions
+    model: ref('station') # References the dbt model named `fact_transactions`
+    description: "station description"
+
+    entities: # Entities included in the table are defined here. MetricFlow will use these columns as join keys.
+      - name: station
+        type: primary
+        expr: station_id
+
+      - name: region
+        type: foreign
+        expr: region_id
+
+    dimensions: # dimensions are qualitative values such as names, dates, or geographical data. They provide context to metrics and allow "metric by group" data slicing.
+      - name: station_name
+        type: categorical
+        expr: name
+      - name: short_station_name
+        type: categorical
+        expr: short_name
+      - name: latitude
+        type: categorical
+        expr: lat
+      - name: longitude
+        type: categorical
+        expr: lon
+
+#      - name: median_sales
+#        description: "The median sale of the transaction."
+#        agg: median
+#        expr: transaction_total
+
+#  - name: customers # Another semantic model called customers.
+#    model: ref('dim_customers')
+#    description: "A customer dimension table."
+#
+#    entities:
+#      - name: customer
+#        type: primary
+#        expr: customer_id
+#
+#    dimensions:
+#      - name: first_name
+#        type: categorical
+
+metrics:
+  - name: trips_count
+    description: Count of trips
+    type: simple # Pointers to a measure you created in a semantic model
+    label: Count of trips
+    type_params:
+      measure:
+        name: trips_count # The measure you are creating a proxy of.
+        fill_nulls_with: 0
+        join_to_timespine: true
+
+  - name: total_trip_duration
+    description: duration of trips
+    type: simple # Pointers to a measure you created in a semantic model
+    label: Duration of trips
+    type_params:
+      measure:
+        name: total_trip_duration # The measure you are creating a proxy of.
+        fill_nulls_with: 0
+        join_to_timespine: true
+
+  - name: average_trip_duration
+    description: average duration of trips
+    type: derived # Pointers to a measure you created in a semantic model
+    label: average_trip_duration
+    type_params:
+      expr: (total_trip_duration/ trips_count)
+      metrics:
+        - name: total_trip_duration # The measure you are creating a proxy of.
+        - name: trips_count
+
+
+#    - name: large_orders
+#      description: "Order with order values over 20."
+#      type: SIMPLE
+#      label: Large orders
+#      type_params:
+#        measure:
+#          name: orders
+#      filter: | # For any metric you can optionally include a filter on dimension values
+#        {{Dimension('customer__order_total_dim')}} >= 20
