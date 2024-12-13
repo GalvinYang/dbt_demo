@@ -189,7 +189,7 @@ metrics:
     type: derived # Pointers to a measure you created in a semantic model
     label: average_trip_duration
     type_params:
-      expr: (total_trip_duration/ trips_count)
+      expr: (total_trip_duration/ (trips_count-10))
       metrics:
         - name: total_trip_duration # The measure you are creating a proxy of.
         - name: trips_count
